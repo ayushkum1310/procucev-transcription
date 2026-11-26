@@ -10,7 +10,7 @@ from threading import Lock
 
 import numpy as np
 import psycopg
-from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from faster_whisper import WhisperModel
 from psycopg.rows import dict_row
@@ -188,11 +188,13 @@ async def transcribe(socket: WebSocket):
                         preview = await run_in_threadpool(recognize, bytes(buffer), language)
                         last_preview = len(buffer)
                         await socket.send_json({"text": " ".join(filter(None, [*completed, preview]))})
+    except WebSocketDisconnect:
+        return
     except Exception:
         logger.exception("Transcription interrupted")
         try:
             await socket.send_json({"error": "Transcription was interrupted. You can save the text already shown."})
-        except RuntimeError:
+        except (RuntimeError, WebSocketDisconnect):
             return
     await socket.close()
 

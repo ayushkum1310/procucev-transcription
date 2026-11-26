@@ -151,7 +151,7 @@ function App() {
               </button>}
         </div>
         <label>Title<input placeholder="Untitled transcript" maxLength={120} value={title} onChange={e => setTitle(e.target.value)} readOnly={active || busy}/></label>
-        <label>Transcript<textarea placeholder="Your words will appear here as you speak." value={body} maxLength={50000} onChange={e => setBody(e.target.value)} readOnly={active || busy}/></label>
+        <div className="transcript-field"><label htmlFor="transcript">Transcript</label><textarea id="transcript" placeholder="Your words will appear here as you speak." value={body} maxLength={50000} onChange={e => setBody(e.target.value)} readOnly={active || busy}/></div>
         <div className="toolbar actions"><button disabled={active || busy} onClick={() => open(null)}>New transcript</button>
           <button className="primary" disabled={active || busy || !loaded || !body.trim()} onClick={save}>{editing ? 'Save changes' : 'Save transcript'}</button></div>
         <p role="status" className="notice">{notice || (status === 'recording' ? 'Recording · Speak naturally' : '')}</p>

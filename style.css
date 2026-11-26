@@ -27,3 +27,4 @@ li{display:flex;align-items:center;gap:5px;border-bottom:1px solid #e3ede6}
 .entry span{color:#50625b;font-size:.75rem;font-weight:400}
 .delete{color:#8a352a;border:0;background:transparent}
 @media(max-width:710px){.layout{grid-template-columns:1fr}header{margin-bottom:32px}.panel{padding:16px}}
+.transcript-field{margin-bottom:15px}.transcript-field label{margin-bottom:0}
