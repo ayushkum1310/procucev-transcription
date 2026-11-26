@@ -1,30 +1,10 @@
-const SAMPLE_RATE = 16000;
-const WINDOW = 16 * SAMPLE_RATE;
-const FRAME = 320;
-const EDGE_PADDING = Math.round(0.25 * SAMPLE_RATE);
-
-function speechBounds(audio, count) {
-  let first = -1;
-  let last = 0;
-  let activeFrames = 0;
-  for (let start = 0; start + FRAME <= count; start += FRAME) {
-    let energy = 0;
-    for (let i = start; i < start + FRAME; i++) energy += audio[i] * audio[i];
-    if (Math.sqrt(energy / FRAME) < 0.008) continue;
-    if (first < 0) first = start;
-    last = start + FRAME;
-    activeFrames++;
-  }
-  return activeFrames >= 10
-    ? [Math.max(0, first - EDGE_PADDING), Math.min(count, last + EDGE_PADDING)]
-    : null;
-}
-
-export function record(worker, language, {onState, onText, onLevel, onFinish}) {
-  let context, stream, node, closed = false, ending = false, flushed = false;
-  let pending, previewAt = 0, length = 0, text = '';
-  const completed = [];
-  const buffer = new Float32Array(WINDOW * 2);
+export function record(language, {onState, onText, onLevel, onFinish}) {
+  const endpoint = new URL('/ws/transcribe', location.href);
+  endpoint.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  endpoint.searchParams.set('lang', language);
+  const socket = new WebSocket(endpoint);
+  let context, stream, node, closed = false, ending = false;
+  let count = 0;
 
   function releaseMic() {
     stream?.getTracks().forEach(track => track.stop());
@@ -35,32 +15,8 @@ export function record(worker, language, {onState, onText, onLevel, onFinish}) {
     if (closed) return;
     closed = true;
     releaseMic();
-    worker.onmessage = null;
-    worker.onerror = null;
+    socket.close();
     onFinish(message);
-  }
-
-  function advance() {
-    if (pending || closed) return;
-    const commit = length >= WINDOW || flushed;
-    if (!commit && (length < 3.5 * SAMPLE_RATE || length - previewAt < 2 * SAMPLE_RATE)) return;
-    const count = Math.min(length, WINDOW);
-    const bounds = speechBounds(buffer, count);
-    const audio = bounds && buffer.slice(...bounds);
-    if (commit) {
-      buffer.copyWithin(0, count, length);
-      length -= count;
-      previewAt = 0;
-    } else {
-      previewAt = length;
-    }
-    if (!audio) {
-      if (flushed && !length) finish(text ? 'Recording complete.' : 'No speech was detected.');
-      else if (flushed) advance();
-      return;
-    }
-    pending = {commit};
-    worker.postMessage({audio, language}, [audio.buffer]);
   }
 
   async function openMic() {
@@ -70,27 +26,31 @@ export function record(worker, language, {onState, onText, onLevel, onFinish}) {
       await context.resume();
       if (closed) return;
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: {channelCount: 1, echoCancellation: true}, video: false,
+        audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true},
+        video: false,
       });
       if (closed) return releaseMic();
       node = new AudioWorkletNode(context, 'microphone-capture');
       node.port.onmessage = ({data}) => {
-        if (closed) return;
+        if (closed || socket.readyState !== WebSocket.OPEN) return;
         if (data === 'stopped') {
-          flushed = true;
           releaseMic();
-          advance();
+          socket.send('stop');
           return;
         }
-        if (length + data.length > buffer.length) {
-          finish('This device could not keep up. You can save the text already shown.');
+        if (socket.bufferedAmount > 128000) {
+          finish('The connection is too slow. You can save the text already shown.');
           return;
         }
-        const rms = Math.sqrt(data.reduce((sum, sample) => sum + sample * sample, 0) / data.length);
-        onLevel(Math.min(1, rms * 8));
-        buffer.set(data, length);
-        length += data.length;
-        advance();
+        const pcm = new Int16Array(data.length);
+        let energy = 0;
+        for (let i = 0; i < data.length; i++) {
+          const sample = Math.max(-1, Math.min(1, data[i]));
+          pcm[i] = Math.round(sample * 32767);
+          energy += sample * sample;
+        }
+        onLevel(Math.min(1, Math.sqrt(energy / data.length) * 8));
+        socket.send(pcm);
       };
       context.createMediaStreamSource(stream).connect(node);
       node.connect(context.destination);
@@ -98,32 +58,30 @@ export function record(worker, language, {onState, onText, onLevel, onFinish}) {
     } catch (error) {
       finish(error.name === 'NotAllowedError'
         ? 'Allow microphone access in your browser and try again.'
-        : 'Could not open the microphone. Check your audio device and try Chrome.');
+        : 'Could not open the microphone. Check your audio device.');
     }
   }
 
-  worker.onmessage = ({data}) => {
+  socket.onmessage = ({data}) => {
     if (closed) return;
-    if (data.error) return finish(data.error);
-    if (data.ready) return void openMic();
-    if (typeof data.progress === 'number') return onState(`Loading Whisper · ${data.progress}%`);
-    if (pending && typeof data.text === 'string') {
-      if (pending.commit && data.text) completed.push(data.text);
-      if (data.text || pending.commit) {
-        text = [...completed, pending.commit ? '' : data.text].filter(Boolean).join(' ');
-        onText(text);
-      }
-      pending = null;
-      advance();
+    const message = JSON.parse(data);
+    if (message.error) return finish(message.error);
+    if (message.ready) return void openMic();
+    if (message.warming) return onState('Preparing speech model');
+    if (message.committed) {
+      count++;
+      onText(message.committed);
     }
+    if (message.done) finish(count ? 'Recording complete.' : 'No speech was detected.');
   };
-  worker.onerror = () => finish('Whisper could not start. Reload the page and try again.');
+  socket.onclose = () => finish('The transcription connection closed. You can save the text already shown.');
 
   try {
-    context = new AudioContext({sampleRate: SAMPLE_RATE});
-    if (context.sampleRate !== SAMPLE_RATE) throw new Error('Unsupported sample rate');
-    onState('Loading Whisper');
-    worker.postMessage({language});
+    context = new AudioContext({sampleRate: 16000});
+    if (context.sampleRate !== 16000) throw new Error('Unsupported sample rate');
+    // Start resuming during the button gesture, before waiting for the server.
+    context.resume().catch(() => {});
+    onState('Connecting');
   } catch {
     queueMicrotask(() => finish('This browser cannot capture audio at 16 kHz. Try desktop Chrome.'));
   }
