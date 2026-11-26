@@ -1,0 +1,29 @@
+*{box-sizing:border-box}
+:root{color:#172723;background:#f3f6f3;font:16px/1.5 system-ui,sans-serif}
+body{margin:0}
+main{max-width:1152px;margin:auto;padding:36px 24px}
+header{display:flex;align-items:center;gap:10px;margin-bottom:52px}
+.mark{display:grid;place-items:center;background:#163c32;color:#caff98;border-radius:9px;width:34px;height:34px;font-size:22px}
+h1{font-size:clamp(2.3rem,6vw,4.2rem);line-height:1.02;letter-spacing:-.06em;margin:0}
+.intro{color:#50625b;margin:18px 0 30px}
+.layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:18px}
+.panel{background:white;border:1px solid #d9e3dc;border-radius:18px;padding:22px;min-width:0}
+h2{margin:0;font-size:1.2rem}
+label{display:block;font-weight:650;font-size:.86rem;margin-bottom:15px}
+input,textarea,select{display:block;width:100%;margin-top:6px;border:1px solid #cedbd3;background:#f9fbf9;border-radius:8px;padding:10px;color:inherit;font:inherit}
+textarea{min-height:235px;resize:vertical;font-size:1rem;font-weight:400}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px}
+button{cursor:pointer;font:inherit;font-size:.85rem;font-weight:650;border:1px solid #d4ded7;background:#fff;color:inherit;padding:9px 12px;border-radius:8px}
+button:disabled{opacity:.48;cursor:default}
+button:hover:not(:disabled){filter:brightness(.94)}
+.primary{background:#164537;border-color:#164537;color:white}
+.stop{background:#a02f2b;color:white;border-color:#a02f2b}
+.notice{min-height:1.5em;margin-bottom:0;color:#31574a;font-size:.9rem}
+ul{list-style:none;padding:0}
+li{display:flex;align-items:center;gap:5px;border-bottom:1px solid #e3ede6}
+.selected{background:#eff8ed}
+.entry{text-align:left;flex:1;min-width:0;border:0;background:transparent}
+.entry strong,.entry span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.entry span{color:#50625b;font-size:.75rem;font-weight:400}
+.delete{color:#8a352a;border:0;background:transparent}
+@media(max-width:710px){.layout{grid-template-columns:1fr}header{margin-bottom:32px}.panel{padding:16px}}
