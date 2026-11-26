@@ -20,6 +20,7 @@ function App() {
   const [lang, setLang] = useState('auto');
   const [status, setStatus] = useState('idle');
   const [busy, setBusy] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [notice, setNotice] = useState('');
   const session = useRef(null);
 
@@ -28,6 +29,13 @@ function App() {
     setLoaded(true);
   }
   useEffect(() => { refresh().catch(error => setNotice(error.message)); }, []);
+
+  useEffect(() => {
+    if (status !== 'recording') return;
+    const started = performance.now();
+    const ticker = setInterval(() => setElapsed(Math.floor((performance.now() - started) / 1000)), 250);
+    return () => clearInterval(ticker);
+  }, [status]);
 
   function release(recording) {
     recording.stream?.getTracks().forEach(track => track.stop());
@@ -83,6 +91,7 @@ function App() {
             setEditing(null);
             setTitle('');
             setBody('');
+            setElapsed(0);
             setStatus('recording');
           } catch (error) {
             finish(recording, error.message);
@@ -134,15 +143,22 @@ function App() {
   }
 
   const active = status !== 'idle';
+  const time = Math.floor(elapsed / 60) + ':' + String(elapsed % 60).padStart(2, '0');
   return <main>
     <header><span className="mark" aria-hidden="true">▥</span><strong>Speech Desk</strong></header>
     <h1>Live transcription</h1>
     <p className="intro">Speak in Hindi, English, or a mix of both. Review and save the result.</p>
     <div className="layout">
-      <section className="panel">
+      <section className="panel workspace">
+        <div className="section-heading">
+          <h2>Recording studio</h2>
+          <span className={'record-state ' + (status === 'recording' ? 'on-air' : '')}>
+            {status === 'recording' ? 'Recording · ' + time : status === 'connecting' ? 'Preparing model' : status === 'finishing' ? 'Refining transcript' : editing ? 'Saved transcript' : 'Ready'}
+          </span>
+        </div>
         <div className="toolbar">
           <label>Recognition language<select value={lang} onChange={e => setLang(e.target.value)} disabled={active}>
-            <option value="auto">Auto detect</option><option value="hi">Hindi</option><option value="en">English</option>
+            <option value="auto">Hindi + English / Auto</option><option value="hi">Hindi-first</option><option value="en">English</option>
           </select></label>
           {status === 'recording'
             ? <button className="stop" onClick={stop}>■ Stop recording</button>
@@ -151,12 +167,12 @@ function App() {
               </button>}
         </div>
         <label>Title<input placeholder="Untitled transcript" maxLength={120} value={title} onChange={e => setTitle(e.target.value)} readOnly={active || busy}/></label>
-        <div className="transcript-field"><label htmlFor="transcript">Transcript</label><textarea id="transcript" placeholder="Your words will appear here as you speak." value={body} maxLength={50000} onChange={e => setBody(e.target.value)} readOnly={active || busy}/></div>
+        <div className="transcript-field"><label htmlFor="transcript">Transcript {status === 'recording' && <span aria-hidden="true" className="preview">Live draft</span>}</label><textarea id="transcript" placeholder="Your words will appear here as you speak." value={body} maxLength={50000} onChange={e => setBody(e.target.value)} readOnly={active || busy}/></div>
         <div className="toolbar actions"><button disabled={active || busy} onClick={() => open(null)}>New transcript</button>
           <button className="primary" disabled={active || busy || !loaded || !body.trim()} onClick={save}>{editing ? 'Save changes' : 'Save transcript'}</button></div>
         <p role="status" className="notice">{notice || (status === 'recording' ? 'Recording · Speak naturally' : '')}</p>
       </section>
-      <aside className="panel"><h2>History</h2>
+      <aside className="panel"><div className="section-heading"><h2>History</h2>{loaded && <span className="record-state">{history.length} saved</span>}</div>
         {!loaded && <button onClick={() => refresh().catch(error => setNotice(error.message))}>Retry loading history</button>}
         {loaded && history.length === 0 && <p>No saved transcripts yet.</p>}
         <ul>{history.map(item => <li key={item.id} className={editing === item.id ? 'selected' : ''}>

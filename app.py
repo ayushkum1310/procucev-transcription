@@ -21,7 +21,10 @@ from typing import Annotated
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://speech:speech@localhost:5432/speech")
 COOKIE = "speech_workspace"
 SECOND = 32000
-WINDOW = 8 * SECOND
+WINDOW = 14 * SECOND
+DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
+MODEL_NAME = os.getenv("WHISPER_MODEL", "small")
+PREVIEW_INTERVAL = int((1.25 if DEVICE == "cuda" else 2) * SECOND)
 logger = logging.getLogger(__name__)
 slots = asyncio.Semaphore(2)
 model_lock = Lock()
@@ -121,8 +124,11 @@ def remove(item_id: int, request: Request):
 
 @lru_cache(maxsize=1)
 def load_model():
-    return WhisperModel(os.getenv("WHISPER_MODEL", "base"), device="cpu", compute_type="int8",
-                        cpu_threads=4, num_workers=2)
+    return WhisperModel(
+        MODEL_NAME, device=DEVICE,
+        compute_type="float16" if DEVICE == "cuda" else "int8",
+        cpu_threads=4, num_workers=2,
+    )
 
 
 def model():
@@ -130,11 +136,13 @@ def model():
         return load_model()
 
 
-def recognize(pcm, language):
+def recognize(pcm, language, final=False):
     samples = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768
     segments, _ = model().transcribe(
-        samples, language=language, task="transcribe", beam_size=1,
-        vad_filter=True, condition_on_previous_text=False,
+        samples, language=language, task="transcribe",
+        beam_size=3 if final else 1, temperature=0.0,
+        vad_filter=True, vad_parameters={"min_silence_duration_ms": 450},
+        condition_on_previous_text=False,
     )
     return " ".join(segment.text.strip() for segment in segments).strip()
 
@@ -167,7 +175,7 @@ async def transcribe(socket: WebSocket):
                         return
                     if message.get("text") == "stop":
                         if buffer:
-                            completed.append(await run_in_threadpool(recognize, bytes(buffer), language))
+                            completed.append(await run_in_threadpool(recognize, bytes(buffer), language, True))
                         await socket.send_json({"text": " ".join(filter(None, completed)), "done": True})
                         break
                     pcm = message.get("bytes")
@@ -180,11 +188,11 @@ async def transcribe(socket: WebSocket):
                         break
                     buffer.extend(pcm)
                     if len(buffer) >= WINDOW:
-                        completed.append(await run_in_threadpool(recognize, bytes(buffer[:WINDOW]), language))
+                        completed.append(await run_in_threadpool(recognize, bytes(buffer[:WINDOW]), language, True))
                         del buffer[:WINDOW]
                         last_preview = 0
                         await socket.send_json({"text": " ".join(filter(None, completed))})
-                    elif len(buffer) - last_preview >= 2 * SECOND:
+                    elif len(buffer) - last_preview >= PREVIEW_INTERVAL:
                         preview = await run_in_threadpool(recognize, bytes(buffer), language)
                         last_preview = len(buffer)
                         await socket.send_json({"text": " ".join(filter(None, [*completed, preview]))})
