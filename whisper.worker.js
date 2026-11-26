@@ -6,7 +6,7 @@ env.backends.onnx.wasm.numThreads = self.crossOriginIsolated
   : 1;
 
 const models = {
-  hindi: 'MaybeSomeone19/whisper-tiny-hinglish-onnx',
+  hindi: 'di12355/whisper-hinglish-swift-onnx',
   english: 'Xenova/whisper-base',
 };
 
@@ -21,7 +21,7 @@ async function load(language) {
   }
   recognizer ??= pipeline('automatic-speech-recognition', models[language], {
     device: 'wasm',
-    dtype: 'q8',
+    dtype: language === 'hindi' ? {encoder_model: 'fp32', decoder_model_merged: 'q8'} : 'q8',
     progress_callback: event => {
       if (event.status === 'progress' && event.file?.endsWith('.onnx')) {
         self.postMessage({progress: Math.round(event.progress)});
@@ -42,7 +42,7 @@ self.onmessage = async ({data}) => {
       return;
     }
     const result = await transcribe(data.audio, {
-      language: data.language,
+      language: 'en',
       task: 'transcribe',
       max_new_tokens: 64,
       return_timestamps: false,

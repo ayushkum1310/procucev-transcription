@@ -1,5 +1,24 @@
 const SAMPLE_RATE = 16000;
-const WINDOW = 12 * SAMPLE_RATE;
+const WINDOW = 16 * SAMPLE_RATE;
+const FRAME = 320;
+const EDGE_PADDING = Math.round(0.25 * SAMPLE_RATE);
+
+function speechBounds(audio, count) {
+  let first = -1;
+  let last = 0;
+  let activeFrames = 0;
+  for (let start = 0; start + FRAME <= count; start += FRAME) {
+    let energy = 0;
+    for (let i = start; i < start + FRAME; i++) energy += audio[i] * audio[i];
+    if (Math.sqrt(energy / FRAME) < 0.008) continue;
+    if (first < 0) first = start;
+    last = start + FRAME;
+    activeFrames++;
+  }
+  return activeFrames >= 10
+    ? [Math.max(0, first - EDGE_PADDING), Math.min(count, last + EDGE_PADDING)]
+    : null;
+}
 
 export function record(worker, language, {onState, onText, onLevel, onFinish}) {
   let context, stream, node, closed = false, ending = false, flushed = false;
@@ -24,9 +43,10 @@ export function record(worker, language, {onState, onText, onLevel, onFinish}) {
   function advance() {
     if (pending || closed) return;
     const commit = length >= WINDOW || flushed;
-    if (!commit && (length < 2.5 * SAMPLE_RATE || length - previewAt < 2 * SAMPLE_RATE)) return;
+    if (!commit && (length < 3.5 * SAMPLE_RATE || length - previewAt < 2 * SAMPLE_RATE)) return;
     const count = Math.min(length, WINDOW);
-    const audio = buffer.slice(0, count);
+    const bounds = speechBounds(buffer, count);
+    const audio = bounds && buffer.slice(...bounds);
     if (commit) {
       buffer.copyWithin(0, count, length);
       length -= count;
@@ -34,8 +54,7 @@ export function record(worker, language, {onState, onText, onLevel, onFinish}) {
     } else {
       previewAt = length;
     }
-    const hasSpeech = audio.some(sample => Math.abs(sample) > 0.012);
-    if (!hasSpeech) {
+    if (!audio) {
       if (flushed && !length) finish(text ? 'Recording complete.' : 'No speech was detected.');
       else if (flushed) advance();
       return;

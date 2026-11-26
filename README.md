@@ -6,7 +6,7 @@ A static React app for microphone transcription and editable transcript history.
 
 Run `npm ci --ignore-scripts` and `npm run dev`, then open the localhost URL in desktop Chrome. Select Hindi / Hinglish or English and click **Start recording**. The first use of each mode downloads model weights and caches them in the browser. Allow microphone access and begin talking when the page shows **Recording** and the input meter. The transcript appears in short updates while you speak. Press **Stop recording** to process the remaining audio.
 
-Hindi / Hinglish uses a Whisper Tiny checkpoint fine-tuned for code switching and outputs Hindi in Latin script. English uses Whisper Base. The live preview can revise words as it receives more audio. Accuracy and speed depend on the device, microphone, and speech.
+Hindi / Hinglish uses the Whisper Hindi2Hinglish Swift checkpoint fine-tuned for code switching and outputs Hindi in Latin script. English uses Whisper Base. The live preview waits for enough audio to give the recognizer context and can revise words as more speech arrives. Accuracy and speed depend on the device, microphone, and speech.
 
 ## Deploy to Vercel
 
