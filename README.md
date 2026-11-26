@@ -1,15 +1,15 @@
 # Speech Desk
 
-A static React app for live microphone transcription and editable transcript history.
+A static React app for microphone transcription and editable transcript history. Whisper processes audio on the device in a Web Worker. The application does not upload recordings or call a speech API.
 
-Run `npm ci` and `npm run dev`. Open the localhost URL Vite prints, select a language, and allow microphone access when you start recording. Press Stop to review, edit, and save.
+## Run locally
+
+Run `npm ci --ignore-scripts` and `npm run dev`, then open the localhost URL in desktop Chrome. Select Hindi / Hinglish or English and click **Start recording**. The first use of each mode downloads model weights and caches them in the browser. Allow microphone access and begin talking when the page shows **Recording** and the input meter. The transcript appears in short updates while you speak. Press **Stop recording** to process the remaining audio.
+
+Hindi / Hinglish uses a Whisper Tiny checkpoint fine-tuned for code switching and outputs Hindi in Latin script. English uses Whisper Base. The live preview can revise words as it receives more audio. Accuracy and speed depend on the device, microphone, and speech.
 
 ## Deploy to Vercel
 
-Import `ayushkum1310/procucev-transcription` from GitHub and deploy the `main` branch with the repository root as the project root. The included Vercel configuration builds the app with `npm run build` and publishes `dist`. No environment variables, API keys, or separate services are required.
+Import `ayushkum1310/procucev-transcription` from GitHub and deploy `main` from the repository root. The Vercel config builds with Vite and publishes `dist`. No environment variables, API keys, or backend are required. The app downloads the model weights from Hugging Face.
 
-## Speech and storage
-
-Use Chrome on localhost or HTTPS. The Web Speech API can send microphone audio to the browser vendor's recognition service and may need internet access. Recognition uses one selected language at a time. Mixed Hindi and English recognition depends on the browser and is not guaranteed.
-
-History uses localStorage and stays in the current browser profile and site origin. The original FastAPI, Whisper, and PostgreSQL implementation is available at commit `534ffc1`. This static version does not meet the original assignment's relational database requirement.
+Saved transcripts use localStorage and stay in the current browser profile and site origin. This frontend-only version does not fulfill the original relational database requirement. The earlier FastAPI, Whisper, and PostgreSQL version is available at commit `534ffc1`.

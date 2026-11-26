@@ -57,3 +57,5 @@ textarea{min-height:270px;background:#fcfdfc;border-color:#c8d8cd;padding:15px}
 .empty-history strong{font-size:.9rem;color:#253c32}
 .empty-history p{margin:0;font-size:.85rem}
 @media(max-width:480px){main{padding:20px 14px}.panel{padding:14px}.toolbar:not(.actions){align-items:stretch;flex-direction:column}header{margin-bottom:30px}}
+.mic-monitor{display:flex;align-items:center;gap:12px;margin:-6px 0 15px;color:#39574b;font-size:.8rem}
+.mic-monitor meter{width:110px;height:12px;accent-color:#297859}

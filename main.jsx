@@ -1,37 +1,30 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import './style.css';
+import {record} from './recording';
 
-const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
 function microphoneIssue() {
   if (!window.isSecureContext) return 'Microphone access needs HTTPS or localhost.';
   const policy = document.permissionsPolicy ?? document.featurePolicy;
   if (policy?.allowsFeature('microphone') === false) {
     return 'This preview blocks microphone access. Copy the page link and open it directly in Chrome.';
   }
-  if (!SpeechRecognition) {
-    return 'This browser does not provide speech recognition. Copy the page link and open it directly in Chrome.';
+  if (!navigator.mediaDevices?.getUserMedia || !window.AudioWorkletNode || !window.Worker) {
+    return 'Microphone capture is unavailable in this browser. Open the page directly in desktop Chrome.';
   }
   return '';
 }
 
 const storageKey = 'speech-desk.transcripts.v1';
-const messages = {
-  'not-allowed': 'Allow microphone access in your browser and try again.',
-  'audio-capture': 'Check that your microphone is connected and available.',
-  'network': 'The browser speech service could not connect. Check your internet connection.',
-  'no-speech': 'No speech detected. Try speaking closer to the microphone.',
-  'language-not-supported': 'The selected language is unavailable in this browser.',
-  'service-not-allowed': 'Speech recognition is unavailable. Try Chrome.',
-};
-
 function App() {
   const [items, setItems] = useState([]);
   const [draft, setDraft] = useState({title: '', body: ''});
-  const [language, setLanguage] = useState('hi-IN');
+  const [language, setLanguage] = useState('hindi');
   const [state, setState] = useState('Ready');
   const [notice, setNotice] = useState('');
+  const [micLevel, setMicLevel] = useState(0);
   const current = useRef(null);
+  const worker = useRef(null);
   const active = state !== 'Ready';
   const microphoneUnavailable = microphoneIssue();
 
@@ -43,10 +36,8 @@ function App() {
       setNotice('Could not read transcription history in this browser.');
     }
     return () => {
-      const session = current.current;
-      current.current = null;
-      clearTimeout(session?.openTimer);
-      session?.engine.abort();
+      current.current?.cancel();
+      worker.current?.terminate();
     };
   }, []);
 
@@ -56,71 +47,28 @@ function App() {
       setNotice(microphoneUnavailable);
       return;
     }
-    const engine = new SpeechRecognition();
-    engine.lang = language;
-    engine.continuous = true;
-    engine.interimResults = true;
-    const session = {engine, text: ''};
-    current.current = session;
     setNotice('');
-    setState('Opening microphone');
-    engine.onstart = () => {
-      if (current.current !== session) return;
-      clearTimeout(session.openTimer);
-      setDraft({title: '', body: ''});
-      setState('Recording');
-    };
-    engine.onresult = ({results}) => {
-      if (current.current !== session) return;
-      session.text = Array.from(results, result => result[0]?.transcript.trim()).filter(Boolean).join(' ');
-      setDraft(previous => ({...previous, body: session.text}));
-    };
-    engine.onerror = ({error}) => {
-      if (current.current !== session) return;
-      clearTimeout(session.openTimer);
-      current.current = null;
-      setState('Ready');
-      setNotice(messages[error] ?? 'Speech recognition ended. Try again.');
-    };
-    engine.onend = () => {
-      if (current.current !== session) return;
-      clearTimeout(session.openTimer);
-      current.current = null;
-      setState('Ready');
-      setNotice(session.text ? 'Recording complete.' : 'No speech detected.');
-    };
-    try {
-      session.openTimer = setTimeout(() => {
-        if (current.current === session) cancel('The microphone did not start. Check permission and try again.');
-      }, 12000);
-      engine.start();
-    } catch {
-      clearTimeout(session.openTimer);
-      current.current = null;
-      setState('Ready');
-      setNotice('Could not start speech recognition. Check microphone access.');
-    }
-  }
-
-  function cancel(message) {
-    const session = current.current;
-    if (!session) return;
-    current.current = null;
-    clearTimeout(session.openTimer);
-    session.engine.abort();
-    setState('Ready');
-    setNotice(message);
-  }
-
-  function stop() {
-    if (!current.current) return;
-    setState('Finishing');
-    try {
-      current.current.engine.stop();
-    } catch {
-      current.current = null;
-      setState('Ready');
-    }
+    worker.current ??= new Worker(new URL('./whisper.worker.js', import.meta.url), {type: 'module'});
+    current.current = record(worker.current, language, {
+      onState(next) {
+        if (next === 'Recording') setDraft({title: '', body: ''});
+        setState(next);
+      },
+      onText(body) {
+        setDraft(previous => ({...previous, body}));
+      },
+      onLevel: setMicLevel,
+      onFinish(message) {
+        current.current = null;
+        if (message !== 'Recording complete.' && message !== 'No speech was detected.') {
+          worker.current?.terminate();
+          worker.current = null;
+        }
+        setMicLevel(0);
+        setState('Ready');
+        setNotice(message);
+      },
+    });
   }
 
   function persist(next) {
@@ -157,7 +105,7 @@ function App() {
   return <main>
     <header><span className="mark" aria-hidden="true"><i/><i/><i/><i/><i/></span><strong>Speech Desk</strong></header>
     <h1>Live transcription</h1>
-    <p className="intro">Record, edit, and save conversations in Hindi or English.</p>
+    <p className="intro">Record and edit Hindi or English speech. Audio stays in this browser.</p>
     <div className="layout">
       <section className="panel workspace">
         <div className="section-heading">
@@ -166,16 +114,18 @@ function App() {
         </div>
         <div className="toolbar">
           <label>Recognition language<select value={language} onChange={event => setLanguage(event.target.value)} disabled={active}>
-            <option value="hi-IN">Hindi (India)</option>
-            <option value="en-IN">English (India)</option>
-            <option value="en-US">English (US)</option>
+            <option value="hindi">Hindi / Hinglish (Latin script)</option>
+            <option value="english">English</option>
           </select></label>
           {state === 'Recording'
-            ? <button className="stop" onClick={stop}>■ Stop recording</button>
-            : state === 'Opening microphone'
-              ? <button onClick={() => cancel('Recording canceled.')}>Cancel</button>
+            ? <button className="stop" onClick={() => current.current?.stop()}>■ Stop recording</button>
+            : active
+              ? <button onClick={() => current.current?.cancel()}>Cancel</button>
               : <button className="primary" disabled={active} onClick={start}>● Start recording</button>}
         </div>
+        {state === 'Recording' && <div className="mic-monitor">
+          <span>Microphone input</span><meter aria-label="Microphone input level" min="0" max="1" value={micLevel}/>
+        </div>}
         <label>Title<input value={draft.title} maxLength={120} placeholder="Untitled transcript"
           onChange={event => setDraft({...draft, title: event.target.value})} readOnly={active}/></label>
         <div className="transcript-field">
