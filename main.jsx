@@ -3,6 +3,18 @@ import {createRoot} from 'react-dom/client';
 import './style.css';
 
 const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+function microphoneIssue() {
+  if (!window.isSecureContext) return 'Microphone access needs HTTPS or localhost.';
+  const policy = document.permissionsPolicy ?? document.featurePolicy;
+  if (policy?.allowsFeature('microphone') === false) {
+    return 'This preview blocks microphone access. Copy the page link and open it directly in Chrome.';
+  }
+  if (!SpeechRecognition) {
+    return 'This browser does not provide speech recognition. Copy the page link and open it directly in Chrome.';
+  }
+  return '';
+}
+
 const storageKey = 'speech-desk.transcripts.v1';
 const messages = {
   'not-allowed': 'Allow microphone access in your browser and try again.',
@@ -21,6 +33,7 @@ function App() {
   const [notice, setNotice] = useState('');
   const current = useRef(null);
   const active = state !== 'Ready';
+  const microphoneUnavailable = microphoneIssue();
 
   useEffect(() => {
     try {
@@ -38,12 +51,16 @@ function App() {
   }, []);
 
   function start() {
-    if (!SpeechRecognition || current.current) return;
+    if (current.current) return;
+    if (microphoneUnavailable) {
+      setNotice(microphoneUnavailable);
+      return;
+    }
     const engine = new SpeechRecognition();
     engine.lang = language;
     engine.continuous = true;
     engine.interimResults = true;
-    const session = {engine, text: '', error: false};
+    const session = {engine, text: ''};
     current.current = session;
     setNotice('');
     setState('Opening microphone');
@@ -60,7 +77,9 @@ function App() {
     };
     engine.onerror = ({error}) => {
       if (current.current !== session) return;
-      session.error = true;
+      clearTimeout(session.openTimer);
+      current.current = null;
+      setState('Ready');
       setNotice(messages[error] ?? 'Speech recognition ended. Try again.');
     };
     engine.onend = () => {
@@ -68,7 +87,7 @@ function App() {
       clearTimeout(session.openTimer);
       current.current = null;
       setState('Ready');
-      if (!session.error) setNotice(session.text ? 'Recording complete.' : 'No speech detected.');
+      setNotice(session.text ? 'Recording complete.' : 'No speech detected.');
     };
     try {
       session.openTimer = setTimeout(() => {
@@ -155,7 +174,7 @@ function App() {
             ? <button className="stop" onClick={stop}>■ Stop recording</button>
             : state === 'Opening microphone'
               ? <button onClick={() => cancel('Recording canceled.')}>Cancel</button>
-              : <button className="primary" disabled={active || !SpeechRecognition} onClick={start}>● Start recording</button>}
+              : <button className="primary" disabled={active} onClick={start}>● Start recording</button>}
         </div>
         <label>Title<input value={draft.title} maxLength={120} placeholder="Untitled transcript"
           onChange={event => setDraft({...draft, title: event.target.value})} readOnly={active}/></label>
@@ -169,7 +188,18 @@ function App() {
           <button disabled={active} onClick={() => {setDraft({title: '', body: ''}); setNotice('');}}>New transcript</button>
           <button className="primary" disabled={active || !draft.body.trim()} onClick={save}>{draft.id ? 'Save changes' : 'Save transcript'}</button>
         </div>
-        <p role="status" className="notice">{notice || (!SpeechRecognition ? 'Live recognition is unavailable. Try Chrome. You can still type and save transcripts.' : '')}</p>
+        {microphoneUnavailable && <div className="empty-history">
+          <p>{microphoneUnavailable}</p>
+          {window.isSecureContext && <button type="button" onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(window.location.href);
+              setNotice('Link copied. Paste it into a Chrome tab.');
+            } catch {
+              setNotice('Copy the address from your browser and open it directly in Chrome.');
+            }
+          }}>Copy page link</button>}
+        </div>}
+        <p role="status" className="notice">{notice}</p>
       </section>
       <aside className="panel">
         <div className="section-heading"><h2>History</h2><span className="record-state">{items.length} saved</span></div>
