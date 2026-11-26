@@ -32,6 +32,7 @@ function App() {
     return () => {
       const session = current.current;
       current.current = null;
+      clearTimeout(session?.openTimer);
       session?.engine.abort();
     };
   }, []);
@@ -48,6 +49,7 @@ function App() {
     setState('Opening microphone');
     engine.onstart = () => {
       if (current.current !== session) return;
+      clearTimeout(session.openTimer);
       setDraft({title: '', body: ''});
       setState('Recording');
     };
@@ -63,17 +65,32 @@ function App() {
     };
     engine.onend = () => {
       if (current.current !== session) return;
+      clearTimeout(session.openTimer);
       current.current = null;
       setState('Ready');
       if (!session.error) setNotice(session.text ? 'Recording complete.' : 'No speech detected.');
     };
     try {
+      session.openTimer = setTimeout(() => {
+        if (current.current === session) cancel('The microphone did not start. Check permission and try again.');
+      }, 12000);
       engine.start();
     } catch {
+      clearTimeout(session.openTimer);
       current.current = null;
       setState('Ready');
       setNotice('Could not start speech recognition. Check microphone access.');
     }
+  }
+
+  function cancel(message) {
+    const session = current.current;
+    if (!session) return;
+    current.current = null;
+    clearTimeout(session.openTimer);
+    session.engine.abort();
+    setState('Ready');
+    setNotice(message);
   }
 
   function stop() {
@@ -136,7 +153,9 @@ function App() {
           </select></label>
           {state === 'Recording'
             ? <button className="stop" onClick={stop}>■ Stop recording</button>
-            : <button className="primary" disabled={active || !SpeechRecognition} onClick={start}>● Start recording</button>}
+            : state === 'Opening microphone'
+              ? <button onClick={() => cancel('Recording canceled.')}>Cancel</button>
+              : <button className="primary" disabled={active || !SpeechRecognition} onClick={start}>● Start recording</button>}
         </div>
         <label>Title<input value={draft.title} maxLength={120} placeholder="Untitled transcript"
           onChange={event => setDraft({...draft, title: event.target.value})} readOnly={active}/></label>
