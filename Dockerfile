@@ -7,6 +7,7 @@ COPY public ./public
 RUN npm run build
 
 FROM python:3.11-slim
+ENV HF_HUB_DISABLE_XET=1
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
