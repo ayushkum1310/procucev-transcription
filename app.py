@@ -23,7 +23,8 @@ COOKIE = "speech_workspace"
 SECOND = 32000
 WINDOW = 14 * SECOND
 DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
-MODEL_NAME = os.getenv("WHISPER_MODEL", "small")
+MODEL_NAME = os.getenv("WHISPER_MODEL", "turbo" if DEVICE == "cuda" else "small")
+MIXED_PROMPT = "कल office में presentation है। Please bring your laptop."
 PREVIEW_INTERVAL = int((1.25 if DEVICE == "cuda" else 2) * SECOND)
 logger = logging.getLogger(__name__)
 slots = asyncio.Semaphore(2)
@@ -126,7 +127,7 @@ def remove(item_id: int, request: Request):
 def load_model():
     return WhisperModel(
         MODEL_NAME, device=DEVICE,
-        compute_type="float16" if DEVICE == "cuda" else "int8",
+        compute_type="int8_float16" if DEVICE == "cuda" else "int8",
         cpu_threads=4, num_workers=2,
     )
 
@@ -138,13 +139,20 @@ def model():
 
 def recognize(pcm, language, final=False):
     samples = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768
+    mixed = language == "mixed"
     segments, _ = model().transcribe(
-        samples, language=language, task="transcribe",
+        samples, language="hi" if mixed else language, task="transcribe",
+        initial_prompt=MIXED_PROMPT if mixed else None,
         beam_size=3 if final else 1, temperature=0.0,
         vad_filter=True, vad_parameters={"min_silence_duration_ms": 450},
         condition_on_previous_text=False,
     )
-    return " ".join(segment.text.strip() for segment in segments).strip()
+    transcript = " ".join(segment.text.strip() for segment in segments).strip()
+    if mixed:
+        # A Hindi decode can still emit Arabic-script tokens. Keep the visible draft in its selected scripts.
+        transcript = re.sub(r"[\u0600-\u08ff\ufb50-\ufdff\ufe70-\ufeff]+", " ", transcript)
+        transcript = " ".join(transcript.split())
+    return transcript
 
 
 @app.websocket("/ws/transcribe")
@@ -159,7 +167,9 @@ async def transcribe(socket: WebSocket):
         await socket.send_json({"error": "Both transcription slots are busy. Try again shortly."})
         await socket.close()
         return
-    language = {"hi": "hi", "en": "en"}.get(socket.query_params.get("lang"))
+    language = {"mixed": "mixed", "hi": "hi", "en": "en", "auto": None}.get(
+        socket.query_params.get("lang", "mixed")
+    )
     buffer = bytearray()
     completed = []
     last_preview = 0
@@ -192,10 +202,11 @@ async def transcribe(socket: WebSocket):
                         del buffer[:WINDOW]
                         last_preview = 0
                         await socket.send_json({"text": " ".join(filter(None, completed))})
-                    elif len(buffer) - last_preview >= PREVIEW_INTERVAL:
+                    elif len(buffer) >= 2 * SECOND and len(buffer) - last_preview >= PREVIEW_INTERVAL:
                         preview = await run_in_threadpool(recognize, bytes(buffer), language)
                         last_preview = len(buffer)
-                        await socket.send_json({"text": " ".join(filter(None, [*completed, preview]))})
+                        if preview:
+                            await socket.send_json({"text": " ".join(filter(None, [*completed, preview]))})
     except WebSocketDisconnect:
         return
     except Exception:

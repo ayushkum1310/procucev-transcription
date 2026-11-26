@@ -36,3 +36,24 @@ li{display:flex;align-items:center;gap:5px;border-bottom:1px solid #e3ede6}
 .preview{margin-left:8px}
 textarea{line-height:1.65}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #297859;outline-offset:3px}
+:root{color:#172c26;background:#eef3ef;font-family:Inter,system-ui,sans-serif}
+body{background:radial-gradient(ellipse at top right,#d9eee1 0,transparent 48%)}
+main{max-width:1200px;padding-top:26px}
+header{padding-bottom:20px;border-bottom:1px solid #d2dfd6;margin-bottom:40px}
+.mark{display:flex;justify-content:center;gap:2px;align-items:center}
+.mark i{width:2px;height:8px;background:currentColor;border-radius:2px}
+.mark i:nth-child(2),.mark i:nth-child(4){height:13px}
+.mark i:nth-child(3){height:19px}
+h1{font-weight:760}
+.intro{font-size:1.05rem}
+.panel{border-radius:20px;padding:24px}
+.workspace{box-shadow:0 20px 52px #173e2712}
+.toolbar:not(.actions){padding:12px 14px;background:#edf4ee;border-radius:12px;margin-bottom:18px}
+.toolbar:not(.actions) label{margin:0}
+.toolbar:not(.actions) select{background:white}
+textarea{min-height:270px;background:#fcfdfc;border-color:#c8d8cd;padding:15px}
+.primary,.stop{min-height:42px;padding-inline:15px}
+.empty-history{display:grid;gap:4px;padding:20px 15px;border-radius:12px;border:1px dashed #cbdacf;background:#f7faf7;color:#50625b}
+.empty-history strong{font-size:.9rem;color:#253c32}
+.empty-history p{margin:0;font-size:.85rem}
+@media(max-width:480px){main{padding:20px 14px}.panel{padding:14px}.toolbar:not(.actions){align-items:stretch;flex-direction:column}header{margin-bottom:30px}}

@@ -17,7 +17,7 @@ function App() {
   const [body, setBody] = useState('');
   const [title, setTitle] = useState('');
   const [editing, setEditing] = useState(null);
-  const [lang, setLang] = useState('auto');
+  const [lang, setLang] = useState('mixed');
   const [status, setStatus] = useState('idle');
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -56,7 +56,6 @@ function App() {
     const recording = {};
     session.current = recording;
     try {
-      recording.stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true}, video: false});
       recording.context = new AudioContext({sampleRate: 16000});
       if (recording.context.sampleRate !== 16000) throw new Error('This device could not start 16 kHz audio.');
       await recording.context.audioWorklet.addModule('/pcm.js');
@@ -80,6 +79,13 @@ function App() {
             await context.resume();
             if (session.current !== recording) return;
             const node = recording.node = new AudioWorkletNode(context, 'pcm');
+            recording.stream = await navigator.mediaDevices.getUserMedia({
+              audio: {channelCount: 1, echoCancellation: true}, video: false,
+            });
+            if (session.current !== recording) {
+              release(recording);
+              return;
+            }
             node.port.onmessage = ({data}) => {
               if (socket.readyState !== WebSocket.OPEN) return;
               if (data === 'flushed') socket.send('stop');
@@ -145,9 +151,9 @@ function App() {
   const active = status !== 'idle';
   const time = Math.floor(elapsed / 60) + ':' + String(elapsed % 60).padStart(2, '0');
   return <main>
-    <header><span className="mark" aria-hidden="true">▥</span><strong>Speech Desk</strong></header>
+    <header><span className="mark" aria-hidden="true"><i/><i/><i/><i/><i/></span><strong>Speech Desk</strong></header>
     <h1>Live transcription</h1>
-    <p className="intro">Speak in Hindi, English, or a mix of both. Review and save the result.</p>
+    <p className="intro">Record, edit, and save conversations in Hindi and English.</p>
     <div className="layout">
       <section className="panel workspace">
         <div className="section-heading">
@@ -158,7 +164,7 @@ function App() {
         </div>
         <div className="toolbar">
           <label>Recognition language<select value={lang} onChange={e => setLang(e.target.value)} disabled={active}>
-            <option value="auto">Hindi + English / Auto</option><option value="hi">Hindi-first</option><option value="en">English</option>
+            <option value="mixed">Hindi + English</option><option value="hi">Hindi</option><option value="en">English</option><option value="auto">Auto · all languages</option>
           </select></label>
           {status === 'recording'
             ? <button className="stop" onClick={stop}>■ Stop recording</button>
@@ -167,14 +173,14 @@ function App() {
               </button>}
         </div>
         <label>Title<input placeholder="Untitled transcript" maxLength={120} value={title} onChange={e => setTitle(e.target.value)} readOnly={active || busy}/></label>
-        <div className="transcript-field"><label htmlFor="transcript">Transcript {status === 'recording' && <span aria-hidden="true" className="preview">Live draft</span>}</label><textarea id="transcript" placeholder="Your words will appear here as you speak." value={body} maxLength={50000} onChange={e => setBody(e.target.value)} readOnly={active || busy}/></div>
+        <div className="transcript-field"><label htmlFor="transcript">Transcript {status === 'recording' && <span aria-hidden="true" className="preview">Live draft</span>}</label><textarea id="transcript" placeholder={status === 'recording' ? 'Listening for speech…' : 'Start recording to see your transcript here.'} value={body} maxLength={50000} onChange={e => setBody(e.target.value)} readOnly={active || busy}/></div>
         <div className="toolbar actions"><button disabled={active || busy} onClick={() => open(null)}>New transcript</button>
           <button className="primary" disabled={active || busy || !loaded || !body.trim()} onClick={save}>{editing ? 'Save changes' : 'Save transcript'}</button></div>
         <p role="status" className="notice">{notice || (status === 'recording' ? 'Recording · Speak naturally' : '')}</p>
       </section>
       <aside className="panel"><div className="section-heading"><h2>History</h2>{loaded && <span className="record-state">{history.length} saved</span>}</div>
         {!loaded && <button onClick={() => refresh().catch(error => setNotice(error.message))}>Retry loading history</button>}
-        {loaded && history.length === 0 && <p>No saved transcripts yet.</p>}
+        {loaded && history.length === 0 && <div className="empty-history"><strong>No saved transcripts</strong><p>Saved recordings will appear here.</p></div>}
         <ul>{history.map(item => <li key={item.id} className={editing === item.id ? 'selected' : ''}>
           <button className="entry" disabled={active || busy} onClick={() => open(item)}><strong>{item.title}</strong>
           <span>{new Date(item.created_at).toLocaleString()}</span></button>
